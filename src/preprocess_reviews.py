@@ -1,30 +1,37 @@
+# src/preprocess_reviews.py
+
 import pandas as pd
+import re
+import spacy
+import argparse
+import os
 
-def preprocess_reviews(csv_path, cleaned_csv_path):
-    # Load CSV
-    df = pd.read_csv(csv_path)
+nlp = spacy.load("en_core_web_sm", disable=["parser", "ner"])
 
-    print(f"Original reviews: {len(df)}")
+def preprocess_text(text):
+    text = str(text).lower()
+    text = re.sub(r"http\S+|www\S+|https\S+", "", text)  # remove urls
+    text = re.sub(r"[^a-z\s]", "", text)  # remove non-alphabetic
+    tokens = [token.lemma_ for token in nlp(text) if not token.is_stop]
+    return " ".join(tokens)
 
-    # Drop duplicates
-    df.drop_duplicates(subset='review_text', inplace=True)
+def main(input_csv, output_csv):
+    df = pd.read_csv(input_csv)
+    print(f"Loaded {len(df)} reviews from {input_csv}")
 
-    # Drop missing or empty reviews
-    df.dropna(subset=['review_text'], inplace=True)
-    df = df[df['review_text'].str.strip() != '']
+    df['clean_text'] = df['review_text'].apply(preprocess_text)
 
-    # Normalize dates
-    df['review_date'] = pd.to_datetime(df['review_date']).dt.strftime('%Y-%m-%d')
+    # Basic check for empty reviews
+    empty_count = df['clean_text'].isna().sum() + (df['clean_text'] == "").sum()
+    print(f"Found {empty_count} empty reviews after preprocessing")
 
-    # Optional: lowercase text
-    df['review_text'] = df['review_text'].str.lower()
-
-    # Save cleaned CSV
-    df.to_csv(cleaned_csv_path, index=False)
-    print(f"Cleaned reviews: {len(df)}")
-    print(f"Saved cleaned CSV to {cleaned_csv_path}")
+    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
+    df.to_csv(output_csv, index=False)
+    print(f"Saved preprocessed reviews to {output_csv}")
 
 if __name__ == "__main__":
-    preprocess_reviews('data/cbe_reviews.csv', 'data/cbe_reviews_cleaned.csv')
-    preprocess_reviews('data/boa_reviews.csv', 'data/boa_reviews_cleaned.csv')
-    preprocess_reviews('data/dashen_reviews.csv', 'data/dashen_reviews_cleaned.csv')
+    parser = argparse.ArgumentParser(description="Preprocess reviews for NLP")
+    parser.add_argument("--input", type=str, required=True, help="Input CSV file path")
+    parser.add_argument("--output", type=str, required=True, help="Output CSV file path")
+    args = parser.parse_args()
+    main(args.input, args.output)
